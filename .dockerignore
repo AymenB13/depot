@@ -1,0 +1,6 @@
+.git
+deploy
+test
+README.md
+*.md
+node_modules

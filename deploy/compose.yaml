@@ -1,0 +1,51 @@
+# Portail de dépôt sur le VPS Hostinger : un seul conteneur, servi par le Traefik déjà en place
+# (réseau « proxy », point d'entrée « websecure », résolveur de certificats « le »).
+# Aucun port publié sur l'hôte : seul un routeur HTTPS « depot » est ajouté pour DEPOT_HOST.
+#
+# install.sh copie ce fichier dans /opt/depot/compose.yaml et c'est cette copie qui sert : un push
+# sur GitHub change le code du portail, jamais la façon dont Docker le lance (droits, volumes).
+name: depot
+
+services:
+  app:
+    build:
+      context: /opt/depot/src
+      dockerfile: Dockerfile
+    image: depot-app:latest
+    container_name: depot
+    restart: unless-stopped
+    env_file:
+      - /opt/depot/app.env
+    environment:
+      PUBLIC_URL: https://${DEPOT_HOST:-files.aymenbenali.com}
+    volumes:
+      - /opt/depot/data:/data
+    networks:
+      - proxy
+    # Conteneur verrouillé : système de fichiers en lecture seule, aucun privilège.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.depot.rule=Host(`${DEPOT_HOST:-files.aymenbenali.com}`)
+      - traefik.http.routers.depot.entrypoints=websecure
+      - traefik.http.routers.depot.tls=true
+      - traefik.http.routers.depot.tls.certresolver=le
+      - traefik.http.services.depot.loadbalancer.server.port=8080
+
+networks:
+  proxy:
+    external: true

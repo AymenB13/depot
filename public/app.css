@@ -1,0 +1,765 @@
+/* Dépôt de documents · Aymen Benali
+   Ciel pâle du site, encre marine, bleu « sceau » pour les actions, vert pour les accusés de réception. */
+
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/figtree-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/assets/fonts/figtree-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/assets/fonts/figtree-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/plex-mono-400.woff2') format('woff2');
+}
+
+:root {
+  --ciel: #e8eff7;
+  --ciel-fonce: #d6e2ef;
+  --papier: #ffffff;
+  --encre: #13233f;
+  --encre-douce: #4a5a73;
+  --trait: #cfd9e5;
+  --sceau: #1f5faf;
+  --sceau-fonce: #174a8a;
+  --sceau-pale: #eef4fb;
+  --recu: #1d6b4f;
+  --recu-pale: #eef6f1;
+  --alerte: #a1342b;
+  --alerte-pale: #fbefed;
+  --focus: #8db4e8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ciel);
+  color: var(--encre);
+  font-family: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 32px 20px 40px;
+}
+
+.page-wide {
+  max-width: 1040px;
+}
+
+/* En-tête : le cercle du site, puis le nom */
+.brand {
+  margin: 4px 0 26px;
+}
+
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--encre);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.brand-ring {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--sceau);
+  border-radius: 50%;
+}
+
+.sheet {
+  background: var(--papier);
+  border: 1px solid var(--trait);
+  border-radius: 14px;
+  padding: 40px 44px;
+}
+
+.sheet.narrow {
+  max-width: 460px;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+h2 {
+  margin: 32px 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+p {
+  margin: 0 0 14px;
+}
+
+.lead {
+  margin-bottom: 28px;
+  color: var(--encre-douce);
+  font-size: 19px;
+}
+
+.lead strong {
+  color: var(--encre);
+  font-weight: 600;
+}
+
+.quiet {
+  color: var(--encre-douce);
+  font-size: 15px;
+}
+
+a {
+  color: var(--sceau);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--sceau-fonce);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+code,
+.hash {
+  font-family: 'Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+}
+
+/* Boutons */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--sceau);
+  color: #fff;
+}
+
+.button.primary:hover {
+  background: var(--sceau-fonce);
+  color: #fff;
+}
+
+.button.secondary {
+  background: #fff;
+  border-color: #a9c1df;
+  color: var(--sceau);
+}
+
+.button.secondary:hover {
+  border-color: var(--sceau);
+}
+
+.button.ghost {
+  background: transparent;
+  border-color: var(--trait);
+  color: var(--encre-douce);
+}
+
+.button.ghost:hover {
+  border-color: #9fb0c4;
+  color: var(--encre);
+}
+
+.button.small {
+  padding: 7px 12px;
+  font-size: 14px;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* La fente de dépôt */
+.drop {
+  padding: 34px 24px 30px;
+  border: 1.5px dashed #9fb8d6;
+  border-radius: 12px;
+  background: var(--sceau-pale);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.drop.over {
+  border-color: var(--sceau);
+  border-style: solid;
+  background: #dfeaf8;
+}
+
+.drop-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 4px;
+  fill: none;
+  stroke: var(--sceau);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.drop-title {
+  margin-bottom: 14px;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.drop-hint {
+  margin: 14px 0 0;
+  color: var(--encre-douce);
+  font-size: 14px;
+}
+
+/* Fichiers choisis */
+.queue {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--trait);
+}
+
+.queue .name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.queue .size {
+  color: var(--encre-douce);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.queue .line {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  color: var(--encre-douce);
+  font-size: 14px;
+}
+
+.queue .line.error {
+  color: var(--alerte);
+}
+
+.queue .line.ok {
+  color: var(--recu);
+  font-weight: 600;
+}
+
+.queue progress {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 6px;
+  margin-top: 4px;
+}
+
+.link-button {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--encre-douce);
+  font-family: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+progress {
+  -webkit-appearance: none;
+  appearance: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 99px;
+  background: var(--ciel-fonce);
+}
+
+progress::-webkit-progress-bar {
+  border-radius: 99px;
+  background: var(--ciel-fonce);
+}
+
+progress::-webkit-progress-value {
+  border-radius: 99px;
+  background: var(--sceau);
+}
+
+progress::-moz-progress-bar {
+  border-radius: 99px;
+  background: var(--sceau);
+}
+
+/* Champs */
+.fields {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.fields .button {
+  justify-self: start;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+label {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.optional {
+  color: var(--encre-douce);
+  font-weight: 400;
+}
+
+input[type='text'],
+input[type='password'],
+textarea {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid #b9c7d8;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--encre);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+input[type='text']:focus-visible,
+input[type='password']:focus-visible,
+textarea:focus-visible {
+  border-color: var(--sceau);
+  outline-offset: 1px;
+}
+
+textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.alert {
+  margin: 20px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--alerte-pale);
+  color: var(--alerte);
+}
+
+.notice {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--recu-pale);
+  color: var(--recu);
+}
+
+/* Accusés de réception : un bordereau détaché, avec le cercle en guise de cachet */
+.receipts {
+  margin-top: 36px;
+}
+
+.receipts h2 {
+  margin-top: 0;
+}
+
+.receipt-list {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.receipt {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 0 16px;
+  padding: 18px 20px;
+  border-top: 1.5px dashed #9cc7b3;
+  border-bottom: 1.5px dashed #9cc7b3;
+  background: var(--recu-pale);
+}
+
+.seal {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 2px solid var(--recu);
+  border-radius: 50%;
+  color: var(--recu);
+}
+
+.seal svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.receipt p {
+  margin: 0;
+}
+
+.receipt-when {
+  color: var(--recu);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.receipt-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.receipt-size {
+  margin-bottom: 10px !important;
+  color: var(--encre-douce);
+  font-size: 14px;
+}
+
+.receipt-hash {
+  color: var(--encre-douce);
+  font-size: 13px;
+}
+
+.receipt-hash code {
+  display: block;
+  margin-top: 2px;
+  color: var(--encre);
+  font-size: 13.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-spacing: 0.3em;
+}
+
+.all-done {
+  margin-top: 18px;
+  color: var(--recu);
+  font-weight: 600;
+}
+
+/* Pages de texte */
+.prose h2 {
+  margin-top: 30px;
+}
+
+.prose ul {
+  margin: 0 0 14px;
+  padding-left: 20px;
+}
+
+.prose li {
+  margin-bottom: 6px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 0 0 14px;
+}
+
+.facts dt {
+  color: var(--encre-douce);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.foot {
+  margin-top: 22px;
+}
+
+.foot nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  font-size: 14px;
+}
+
+.foot a {
+  color: var(--encre-douce);
+}
+
+/* Administration */
+.stack {
+  display: grid;
+  gap: 16px;
+}
+
+.stack .button {
+  justify-self: start;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.admin-head h1 {
+  margin: 0;
+}
+
+.admin-head form {
+  margin: 0;
+}
+
+.new-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 22px 0 6px;
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--sceau-pale);
+}
+
+.new-box .field {
+  flex: 1 1 260px;
+}
+
+.box {
+  margin-top: 34px;
+  padding-top: 26px;
+  border-top: 1px solid var(--trait);
+}
+
+.box-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+}
+
+.box-head h2 {
+  margin: 0;
+}
+
+.status {
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: var(--recu-pale);
+  color: var(--recu);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.box-off .status {
+  background: var(--ciel);
+  color: var(--encre-douce);
+}
+
+.usage {
+  margin-left: auto;
+}
+
+.link-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.link-row .button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.link-row .link {
+  background: var(--ciel);
+  color: var(--encre-douce);
+  font-family: 'Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 13.5px;
+}
+
+.box-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+
+.box-actions form,
+.actions form {
+  margin: 0;
+}
+
+.table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+table.files {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.files th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--trait);
+  color: var(--encre-douce);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.files td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--trait);
+  vertical-align: top;
+}
+
+.files .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.file-name span {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.file-name small {
+  display: block;
+  margin-top: 3px;
+  color: var(--encre-douce);
+  font-size: 13px;
+}
+
+.file-name .message {
+  white-space: pre-line;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.meta-line {
+  margin: 28px 0 0;
+}
+
+.empty {
+  margin-top: 14px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 20px 14px 32px;
+  }
+
+  .sheet {
+    padding: 26px 20px;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  .lead {
+    font-size: 17px;
+  }
+
+  .link-row {
+    flex-direction: column;
+  }
+
+  .receipt {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

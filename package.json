@@ -1,0 +1,15 @@
+{
+  "name": "depot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dépôt sécurisé de documents pour les clients d'Aymen Benali (files.aymenbenali.com)",
+  "license": "UNLICENSED",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  }
+}
