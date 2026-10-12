@@ -342,3 +342,22 @@ test('suppression automatique après la durée de conservation', async (t) => {
   assert.equal(await app.store.purgeOlderThan(new Date(Date.now() + 1000)), 1);
   assert.equal(app.store.files.size, 0);
 });
+
+test('www. renvoie vers l\'adresse principale', async (t) => {
+  const http = require('node:http');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'depot-test-'));
+  const port = await freePort();
+  const app = await startApp(dataDir, port);
+  t.after(async () => {
+    await stop(app);
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const res = await new Promise((resolve, reject) => {
+    http
+      .get({ host: '127.0.0.1', port, path: '/securite?x=1', headers: { Host: `www.127.0.0.1:${port}` } }, resolve)
+      .on('error', reject);
+  });
+  res.resume();
+  assert.equal(res.statusCode, 301);
+  assert.equal(res.headers.location, `http://127.0.0.1:${port}/securite?x=1`);
+});

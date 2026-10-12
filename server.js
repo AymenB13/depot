@@ -94,6 +94,7 @@ function createApp(config, { logger = log } = {}) {
   };
   let passwordChecks = 0;
   const assets = loadAssets(path.join(__dirname, 'public'));
+  const wwwHost = `www.${new URL(config.publicOrigin).host}`;
   const cookieName = config.secureCookies ? '__Host-depot' : 'depot';
 
   // ---- Antivirus : une analyse à la fois ; en cas d'échec, nouvel essai au passage suivant ----
@@ -299,6 +300,10 @@ function createApp(config, { logger = log } = {}) {
   }
 
   async function route(req, res) {
+    // www.files… renvoie vers l'adresse principale, chemin compris.
+    if (String(req.headers.host || '').toLowerCase() === wwwHost) {
+      return send(res, 301, '', { Location: `${config.publicOrigin}${req.url.startsWith('/') ? req.url : '/'}` });
+    }
     const url = new URL(req.url, 'http://localhost');
     const { pathname } = url;
     const isRead = req.method === 'GET' || req.method === 'HEAD';

@@ -35,11 +35,11 @@ for id in $(docker ps -aq); do
   [ "$project" = depot ] && continue
   case "$name" in depot | depot-clamav) die "un conteneur « $name » existe déjà et n'appartient pas au portail." ;; esac
   labels=$(docker inspect -f '{{range $k, $v := .Config.Labels}}{{$k}}={{$v}}{{println}}{{end}}' "$id")
-  if printf '%s\n' "$labels" | grep -q '^traefik\.http\.routers\.depot\.'; then
-    die "le conteneur « $name » utilise déjà le routeur Traefik « depot »."
+  if printf '%s\n' "$labels" | grep -qE '^traefik\.http\.routers\.depot(-www)?\.'; then
+    die "le conteneur « $name » utilise déjà un routeur Traefik « depot »."
   fi
   if printf '%s\n' "$labels" | grep '^traefik\.http\.routers\.[^.]*\.rule=' | grep -qF "$HOST"; then
-    die "le conteneur « $name » répond déjà pour $HOST."
+    die "le conteneur « $name » répond déjà pour $HOST ou www.$HOST."
   fi
 done
 
