@@ -3,7 +3,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/AymenB13/depot/main/deploy/install.sh -o /root/depot-install.sh && bash /root/depot-install.sh
 #
 # Ne touche qu'à /opt/depot, au projet Docker « depot » (conteneur depot, image depot-app),
-# au routeur Traefik « depot » et aux unités systemd depot-update.*. Peut être relancé sans risque :
+# à son antivirus (conteneur depot-clamav), au routeur Traefik « depot » et aux unités systemd
+# depot-update.*. Peut être relancé sans risque :
 # les clés et le mot de passe déjà créés sont gardés.
 set -euo pipefail
 umask 077
@@ -32,7 +33,7 @@ for id in $(docker ps -aq); do
   name=$(docker inspect -f '{{.Name}}' "$id" | sed 's#^/##')
   project=$(docker inspect -f '{{if .Config.Labels}}{{index .Config.Labels "com.docker.compose.project"}}{{end}}' "$id")
   [ "$project" = depot ] && continue
-  [ "$name" = depot ] && die "un conteneur « depot » existe déjà et n'appartient pas au portail."
+  case "$name" in depot | depot-clamav) die "un conteneur « $name » existe déjà et n'appartient pas au portail." ;; esac
   labels=$(docker inspect -f '{{range $k, $v := .Config.Labels}}{{$k}}={{$v}}{{println}}{{end}}' "$id")
   if printf '%s\n' "$labels" | grep -q '^traefik\.http\.routers\.depot\.'; then
     die "le conteneur « $name » utilise déjà le routeur Traefik « depot »."
@@ -96,9 +97,10 @@ if ! grep -q '^ADMIN_PASSWORD_HASH=.' "$ROOT/app.env"; then
   printf 'ADMIN_PASSWORD_HASH=%s\n' "$hash" >> "$ROOT/app.env"
 fi
 
-# 5. Démarrage.
-say "Démarrage du portail…"
-"${COMPOSE[@]}" up -d app
+# 5. Démarrage du portail et de son antivirus.
+say "Démarrage du portail et de l'antivirus…"
+"${COMPOSE[@]}" pull --quiet clamav
+"${COMPOSE[@]}" up -d
 healthy() { [ "$(docker inspect -f '{{.State.Health.Status}}' depot 2>/dev/null)" = healthy ]; }
 for _ in $(seq 1 45); do
   if healthy; then break; fi

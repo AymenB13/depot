@@ -99,13 +99,25 @@ test('configuration : clés obligatoires', () => {
   });
   assert.equal(config.publicOrigin, 'https://files.aymenbenali.com');
   assert.equal(config.secureCookies, true);
-  assert.throws(
-    () =>
-      loadConfig({
-        MASTER_KEY: crypto.randomBytes(32).toString('base64url'),
-        ADMIN_PASSWORD_HASH: hashPassword('correct horse battery'),
-        NOTIFY_URL: 'http://exemple.test/hook',
-      }),
-    /https/,
-  );
+});
+
+test('preuve de travail : signée, à usage unique, assez de zéros', () => {
+  const { ProofOfWork, DailyVolume, leadingZeroBits } = require('../lib/antispam');
+  assert.equal(leadingZeroBits(Buffer.from([0, 0x0f, 0xff])), 12);
+  const pow = new ProofOfWork(crypto.randomBytes(32), 8);
+  const { challenge, bits } = pow.issue();
+  let nonce = 0;
+  while (leadingZeroBits(crypto.createHash('sha256').update(`${challenge}:${nonce}`).digest()) < bits) nonce += 1;
+  assert.equal(pow.verify(`${challenge}x`, String(nonce)), false, 'signature modifiée');
+  assert.equal(pow.verify(challenge, 'abc'), false);
+  assert.equal(pow.verify(challenge, String(nonce)), true);
+  assert.equal(pow.verify(challenge, String(nonce)), false, 'rejeu');
+  const other = new ProofOfWork(crypto.randomBytes(32), 8);
+  assert.equal(other.verify(pow.issue().challenge, '1'), false, 'autre clé');
+
+  const volume = new DailyVolume(100);
+  assert.equal(volume.take('ip', 60), true);
+  assert.equal(volume.take('ip', 60), false);
+  assert.equal(volume.take('ip', -60), true);
+  assert.equal(volume.take('ip', 60), true);
 });

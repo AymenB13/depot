@@ -5,17 +5,19 @@
 
 const http = require('node:http');
 const fs = require('node:fs');
-const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
 const { loadConfig } = require('./lib/config');
-const { deriveKey, decryptChunk, TAG_LENGTH } = require('./lib/crypto');
+const { deriveKey } = require('./lib/crypto');
 const { Store } = require('./lib/store');
 const { Uploads, UploadError } = require('./lib/uploads');
+const { ProofOfWork, DailyVolume } = require('./lib/antispam');
+const { scanFile } = require('./lib/antivirus');
+const { decryptedChunks } = require('./lib/files');
 const { verifyPassword } = require('./lib/password');
 const { Sessions, RateLimiter, safeEqual } = require('./lib/guards');
-const { cleanText, contentDisposition } = require('./lib/names');
+const { contentDisposition } = require('./lib/names');
 const {
   SECURITY_HEADERS,
   HttpError,
@@ -62,14 +64,6 @@ function loadAssets(dir) {
   };
 }
 
-const NOTICES = {
-  created: 'Lien créé. Copiez-le et envoyez-le à votre client.',
-  rotated: 'Nouveau lien créé. L\'ancien ne fonctionne plus.',
-  on: 'Lien réactivé.',
-  off: 'Lien désactivé.',
-  deleted: 'Fichier supprimé.',
-};
-
 function waitDrain(res) {
   return new Promise((resolve) => {
     const done = () => {
@@ -85,19 +79,57 @@ function waitDrain(res) {
 function createApp(config, { logger = log } = {}) {
   const metaKey = deriveKey(config.masterKey, 'depot/meta/v1');
   const store = new Store({ dataDir: config.dataDir, metaKey, log: logger });
-  const uploads = new Uploads({ store, config, log: logger });
+  const antispam = {
+    pow: new ProofOfWork(deriveKey(config.masterKey, 'depot/pow/v1'), config.powBits),
+    perIp: new DailyVolume(config.dailyBytesPerIp),
+    total: new DailyVolume(config.dailyBytesTotal),
+  };
+  const uploads = new Uploads({ store, config, log: logger, antispam });
   const sessions = new Sessions();
   // Pas de limite globale sur la connexion : elle permettrait à n'importe qui de bloquer l'accès.
-  // Le mot de passe généré (144 bits) et scrypt rendent l'essai en ligne inutile ; la limite par
-  // adresse et le plafond de vérifications simultanées protègent le serveur.
   const limits = {
     login: new RateLimiter(8, 15 * 60e3),
-    badToken: new RateLimiter(30, 10 * 60e3),
+    starts: new RateLimiter(60, 60 * 60e3),
     api: new RateLimiter(20000, 10 * 60e3),
   };
   let passwordChecks = 0;
   const assets = loadAssets(path.join(__dirname, 'public'));
   const cookieName = config.secureCookies ? '__Host-depot' : 'depot';
+
+  // ---- Antivirus : une analyse à la fois ; en cas d'échec, nouvel essai au passage suivant ----
+  const scanQueue = [];
+  let scanning = false;
+
+  function enqueueScans() {
+    for (const meta of store.files.values()) {
+      if ((!meta.scan || meta.scan.status === 'pending') && !scanQueue.includes(meta.id)) scanQueue.push(meta.id);
+    }
+    runScans();
+  }
+
+  async function runScans() {
+    if (scanning) return;
+    scanning = true;
+    try {
+      while (scanQueue.length > 0) {
+        const meta = store.files.get(scanQueue.shift());
+        if (!meta || (meta.scan && meta.scan.status !== 'pending')) continue;
+        const result = await scanFile(store, meta, { host: config.clamavHost, port: config.clamavPort });
+        if (!store.files.has(meta.id)) continue;
+        if (result.status === 'error') {
+          logger('analyse_impossible', { file: meta.id, detail: result.detail });
+          continue;
+        }
+        meta.scan = { status: result.status, signature: result.signature || '', at: new Date().toISOString() };
+        await store.saveMeta(meta);
+        logger(result.status === 'clean' ? 'analyse_saine' : 'virus_detecte', { file: meta.id });
+      }
+    } catch (error) {
+      logger('analyse_echec', { error: error.message });
+    } finally {
+      scanning = false;
+    }
+  }
 
   function cookie(value, maxAge) {
     const secure = config.secureCookies ? '; Secure' : '';
@@ -120,23 +152,6 @@ function createApp(config, { logger = log } = {}) {
     return form;
   }
 
-  function notify(box, meta) {
-    if (!config.notifyUrl) return;
-    fetch(config.notifyUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        event: 'depot',
-        client: box.name,
-        file: meta.name,
-        size: meta.size,
-        at: meta.uploadedAt,
-        admin: `${config.publicOrigin}/admin`,
-      }),
-      signal: AbortSignal.timeout(5000),
-    }).catch((error) => logger('notification_echec', { error: error.message }));
-  }
-
   function serveAsset(req, res, name, version) {
     const asset = assets.get(name);
     if (!asset) return sendHtml(res, 404, views.notFound(assets));
@@ -145,11 +160,6 @@ function createApp(config, { logger = log } = {}) {
   }
 
   async function download(res, meta) {
-    const handle = await fsp.open(store.dataPath(meta.id), 'r');
-    const key = Buffer.from(meta.key, 'base64');
-    const prefix = Buffer.from(meta.prefix, 'base64');
-    const chunkSize = meta.chunkSize;
-    const count = Math.max(1, Math.ceil(meta.size / chunkSize));
     res.writeHead(200, {
       ...SECURITY_HEADERS,
       'Content-Type': 'application/octet-stream',
@@ -158,27 +168,22 @@ function createApp(config, { logger = log } = {}) {
       'Cache-Control': 'no-store',
     });
     try {
-      for (let index = 0; index < count && !res.destroyed; index += 1) {
-        const length = index < count - 1 ? chunkSize : meta.size - chunkSize * (count - 1);
-        const buffer = Buffer.alloc(length + TAG_LENGTH);
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, index * (chunkSize + TAG_LENGTH));
-        if (bytesRead !== buffer.length) throw new Error('fichier tronqué');
-        const plain = decryptChunk(key, prefix, index, index === count - 1, buffer);
+      for await (const plain of decryptedChunks(store, meta)) {
+        if (res.destroyed) return;
         if (!res.write(plain)) await waitDrain(res);
       }
       res.end();
     } catch (error) {
       logger('telechargement_echec', { file: meta.id, error: error.message });
       res.destroy();
-    } finally {
-      await handle.close();
     }
   }
 
-  async function depositApi(req, res, box, uploadId, step) {
+  async function depositApi(req, res, ip, uploadId, step) {
     if (!sameOrigin(req)) throw new HttpError(403, 'Requête refusée.');
     if (!uploadId) {
       if (req.method !== 'POST') throw new HttpError(405, 'Méthode non autorisée.');
+      if (!limits.starts.hit(ip)) throw new HttpError(429, 'Trop d\'envois depuis votre connexion. Réessayez plus tard.');
       if (!/^application\/json\b/.test(req.headers['content-type'] || '')) throw new HttpError(415, 'JSON attendu.');
       let input;
       try {
@@ -187,23 +192,25 @@ function createApp(config, { logger = log } = {}) {
         if (error instanceof HttpError) throw error;
         throw new HttpError(400, 'Requête illisible.');
       }
-      return sendJson(res, 201, await uploads.start(box, input || {}));
+      if (!input || typeof input !== 'object') throw new HttpError(400, 'Requête illisible.');
+      const started = await uploads.start(input, ip);
+      logger('envoi_commence', { size: input.size });
+      return sendJson(res, 201, started);
     }
     if (step === undefined) {
       if (req.method !== 'DELETE') throw new HttpError(405, 'Méthode non autorisée.');
-      await uploads.abort(box, uploadId);
+      await uploads.abort(uploadId);
       return send(res, 204, '');
     }
     if (step === 'complete') {
       if (req.method !== 'POST') throw new HttpError(405, 'Méthode non autorisée.');
-      const meta = await uploads.finish(box, uploadId);
-      logger('depot_recu', { box: box.id, size: meta.size });
-      notify(box, meta);
-      return sendJson(res, 200, { name: meta.name, size: meta.size, sha256: meta.sha256, receivedAt: meta.uploadedAt });
+      const meta = await uploads.finish(uploadId);
+      logger('depot_recu', { file: meta.id, size: meta.size });
+      enqueueScans();
+      return sendJson(res, 200, { name: meta.name, size: meta.size, receivedAt: meta.uploadedAt });
     }
     if (req.method !== 'PUT') throw new HttpError(405, 'Méthode non autorisée.');
-    const index = Number(step);
-    const result = await uploads.receiveChunk(box, uploadId, index, (expected) => readExact(req, expected));
+    const result = await uploads.receiveChunk(uploadId, Number(step), (expected) => readExact(req, expected));
     return sendJson(res, 200, result);
   }
 
@@ -250,19 +257,13 @@ function createApp(config, { logger = log } = {}) {
 
     if (pathname === '/admin') {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Méthode non autorisée.');
-      const boxes = store.boxes.map((box) => ({
-        box,
-        link: store.boxLink(box, config.publicOrigin),
-        files: store.filesOf(box.id),
-        usage: store.usage(box.id),
-      }));
       return sendHtml(
         res,
         200,
         views.dashboard(assets, {
-          boxes,
+          files: store.list(),
           csrf: session.csrf,
-          notice: Object.hasOwn(NOTICES, url.searchParams.get('ok') || '') ? NOTICES[url.searchParams.get('ok')] : '',
+          deleted: url.searchParams.get('ok') === 'deleted',
           freeBytes: await store.freeBytes(),
           retentionDays: config.retentionDays,
         }),
@@ -276,33 +277,7 @@ function createApp(config, { logger = log } = {}) {
       return redirect(res, '/admin/login?sortie=1', { 'Set-Cookie': cookie('', 0) });
     }
 
-    if (pathname === '/admin/boxes') {
-      if (req.method !== 'POST') throw new HttpError(405, 'Méthode non autorisée.');
-      const form = await adminForm(req, session);
-      const name = cleanText(form.get('name') || '', 80).replace(/\s+/g, ' ');
-      if (!name) return redirect(res, '/admin');
-      const box = await store.createBox(name);
-      logger('espace_cree', { box: box.id });
-      return redirect(res, `/admin?ok=created#box-${box.id}`);
-    }
-
-    let match = /^\/admin\/boxes\/([a-f0-9]{16})\/(rotate|toggle)$/.exec(pathname);
-    if (match) {
-      if (req.method !== 'POST') throw new HttpError(405, 'Méthode non autorisée.');
-      await adminForm(req, session);
-      const box = store.boxById(match[1]);
-      if (!box) throw new HttpError(404, 'Espace introuvable.');
-      if (match[2] === 'rotate') {
-        await store.rotateBox(box.id);
-        logger('lien_remplace', { box: box.id });
-        return redirect(res, `/admin?ok=rotated#box-${box.id}`);
-      }
-      await store.setBoxActive(box.id, !box.active);
-      logger(box.active ? 'lien_reactive' : 'lien_desactive', { box: box.id });
-      return redirect(res, `/admin?ok=${box.active ? 'on' : 'off'}#box-${box.id}`);
-    }
-
-    match = /^\/admin\/files\/([a-f0-9]{32})(\/delete)?$/.exec(pathname);
+    const match = /^\/admin\/files\/([a-f0-9]{32})(\/delete)?$/.exec(pathname);
     if (match) {
       const meta = store.files.get(match[1]);
       if (!meta) throw new HttpError(404, 'Fichier introuvable.');
@@ -311,9 +286,11 @@ function createApp(config, { logger = log } = {}) {
         await adminForm(req, session);
         await store.deleteFile(meta.id);
         logger('fichier_supprime', { file: meta.id });
-        return redirect(res, `/admin?ok=deleted#box-${meta.boxId}`);
+        return redirect(res, '/admin?ok=deleted');
       }
       if (req.method !== 'GET') throw new HttpError(405, 'Méthode non autorisée.');
+      // Rien ne sort avant le feu vert de l'antivirus.
+      if (!meta.scan || meta.scan.status !== 'clean') throw new HttpError(409, 'Fichier pas encore vérifié par l\'antivirus, ou bloqué.');
       logger('fichier_telecharge', { file: meta.id });
       return download(res, meta);
     }
@@ -334,12 +311,12 @@ function createApp(config, { logger = log } = {}) {
     if (pathname === '/robots.txt') return send(res, 200, 'User-agent: *\nDisallow: /\n', { 'Content-Type': 'text/plain; charset=utf-8' });
 
     const pages = {
-      '/': () => views.home(assets),
+      '/': () => views.deposit(assets, { maxBytes: config.maxFileBytes, powBits: config.powBits }),
       '/securite': () => views.security(assets, config),
       '/confidentialite': () => views.privacy(assets, config),
       '/mentions-legales': () => views.legal(assets),
     };
-    if (pages[pathname]) {
+    if (Object.hasOwn(pages, pathname)) {
       if (!isRead) throw new HttpError(405, 'Méthode non autorisée.');
       return sendHtml(res, 200, pages[pathname]());
     }
@@ -347,28 +324,15 @@ function createApp(config, { logger = log } = {}) {
     if (pathname === '/admin' || pathname.startsWith('/admin/')) return adminRoute(req, res, pathname, url);
 
     const ip = clientIp(req);
-    let match = /^\/d\/([^/]*)$/.exec(pathname);
-    if (match) {
+    if (pathname === '/api/challenge') {
       if (!isRead) throw new HttpError(405, 'Méthode non autorisée.');
-      if (limits.badToken.blocked(ip)) return sendHtml(res, 429, views.invalidLink(assets));
-      const token = match[1];
-      const box = /^[A-Za-z0-9_-]{43}$/.test(token) ? store.boxByToken(token) : null;
-      if (!box || !box.active) {
-        limits.badToken.hit(ip);
-        return sendHtml(res, 404, views.invalidLink(assets));
-      }
-      return sendHtml(res, 200, views.deposit(assets, { box, token, maxBytes: config.maxFileBytes }));
+      if (!limits.api.hit(ip)) throw new HttpError(429, 'Trop de requêtes. Réessayez dans quelques minutes.');
+      return sendJson(res, 200, antispam.pow.issue());
     }
-
-    match = /^\/api\/d\/([A-Za-z0-9_-]{43})\/uploads(?:\/([a-f0-9]{32})(?:\/(\d{1,6}|complete))?)?$/.exec(pathname);
+    const match = /^\/api\/uploads(?:\/([a-f0-9]{32})(?:\/(\d{1,6}|complete))?)?$/.exec(pathname);
     if (match) {
-      if (!limits.api.hit(ip) || limits.badToken.blocked(ip)) throw new HttpError(429, 'Trop de requêtes. Réessayez dans quelques minutes.');
-      const box = store.boxByToken(match[1]);
-      if (!box || !box.active) {
-        limits.badToken.hit(ip);
-        throw new HttpError(404, 'Ce lien de dépôt ne fonctionne plus.');
-      }
-      return depositApi(req, res, box, match[2], match[3]);
+      if (!limits.api.hit(ip)) throw new HttpError(429, 'Trop de requêtes. Réessayez dans quelques minutes.');
+      return depositApi(req, res, ip, match[1], match[2]);
     }
 
     return sendHtml(res, 404, views.notFound(assets));
@@ -398,6 +362,9 @@ function createApp(config, { logger = log } = {}) {
     try {
       await uploads.sweep();
       sessions.sweep();
+      antispam.pow.sweep();
+      antispam.perIp.sweep();
+      antispam.total.sweep();
       for (const limiter of Object.values(limits)) limiter.sweep();
       const cutoff = new Date(Date.now() - config.retentionDays * 86400e3);
       const removed = await store.purgeOlderThan(cutoff);
@@ -413,7 +380,18 @@ function createApp(config, { logger = log } = {}) {
   server.headersTimeout = 100_000;
   server.keepAliveTimeout = 95_000;
 
-  return { server, store, uploads, sessions, limits, housekeeping, init: () => store.init() };
+  return {
+    server,
+    store,
+    uploads,
+    antispam,
+    sessions,
+    limits,
+    housekeeping,
+    enqueueScans,
+    scansIdle: () => !scanning && scanQueue.length === 0,
+    init: () => store.init(),
+  };
 }
 
 async function main() {
@@ -421,9 +399,11 @@ async function main() {
   const app = createApp(config);
   await app.init();
   await app.housekeeping();
-  const timer = setInterval(app.housekeeping, 15 * 60e3);
-  timer.unref();
-  app.server.listen(config.port, () => log('demarrage', { port: config.port, espaces: app.store.boxes.length, fichiers: app.store.files.size }));
+  setInterval(app.housekeeping, 15 * 60e3).unref();
+  // Fichiers encore à analyser (antivirus indisponible un moment) : nouvel essai toutes les 2 minutes.
+  app.enqueueScans();
+  setInterval(app.enqueueScans, 2 * 60e3).unref();
+  app.server.listen(config.port, () => log('demarrage', { port: config.port, fichiers: app.store.files.size }));
   const stop = () => {
     log('arret');
     app.server.close(() => process.exit(0));

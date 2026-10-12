@@ -226,6 +226,20 @@ code,
   opacity: 0.55;
 }
 
+/* Nom de la personne, puis la fente de dépôt */
+.name-field {
+  margin-bottom: 22px;
+}
+
+/* Champ piège pour les robots : hors de l'écran, jamais vu ni atteint au clavier. */
+.trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 /* La fente de dépôt */
 .drop {
   padding: 34px 24px 30px;
@@ -555,6 +569,26 @@ textarea {
 }
 
 /* Administration */
+.scan {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.scan.ok {
+  color: var(--recu);
+}
+
+.scan.bad {
+  color: var(--alerte);
+  white-space: normal;
+}
+
+.scan.wait {
+  color: var(--encre-douce);
+  font-weight: 500;
+}
+
 .stack {
   display: grid;
   gap: 16px;

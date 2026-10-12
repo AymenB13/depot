@@ -1,6 +1,7 @@
-# Portail de dépôt sur le VPS Hostinger : un seul conteneur, servi par le Traefik déjà en place
-# (réseau « proxy », point d'entrée « websecure », résolveur de certificats « le »).
-# Aucun port publié sur l'hôte : seul un routeur HTTPS « depot » est ajouté pour DEPOT_HOST.
+# Portail de dépôt sur le VPS Hostinger, servi par le Traefik déjà en place (réseau « proxy »,
+# point d'entrée « websecure », résolveur de certificats « le »), et son antivirus ClamAV, joignable
+# seulement par le portail (réseau « depot »). Aucun port publié sur l'hôte : seul un routeur HTTPS
+# « depot » est ajouté pour DEPOT_HOST.
 #
 # install.sh copie ce fichier dans /opt/depot/compose.yaml et c'est cette copie qui sert : un push
 # sur GitHub change le code du portail, jamais la façon dont Docker le lance (droits, volumes).
@@ -18,10 +19,12 @@ services:
       - /opt/depot/app.env
     environment:
       PUBLIC_URL: https://${DEPOT_HOST:-files.aymenbenali.com}
+      CLAMAV_HOST: clamav
     volumes:
       - /opt/depot/data:/data
     networks:
       - proxy
+      - depot
     # Conteneur verrouillé : système de fichiers en lecture seule, aucun privilège.
     read_only: true
     tmpfs:
@@ -46,6 +49,31 @@ services:
       - traefik.http.routers.depot.tls.certresolver=le
       - traefik.http.services.depot.loadbalancer.server.port=8080
 
+  # Antivirus : base de signatures mise à jour toute seule (freshclam), gardée dans un volume.
+  clamav:
+    image: clamav/clamav:stable
+    container_name: depot-clamav
+    restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: 2100M
+      CLAMD_CONF_MaxFileSize: 2100M
+      CLAMD_CONF_MaxScanSize: 2100M
+      CLAMD_CONF_ConcurrentDatabaseReload: "no"
+    volumes:
+      - clamav-db:/var/lib/clamav
+    networks:
+      - depot
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
 networks:
   proxy:
     external: true
+  depot: {}
+
+volumes:
+  clamav-db: {}

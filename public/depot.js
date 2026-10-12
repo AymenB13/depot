@@ -1,4 +1,4 @@
-// Page de dépôt : les fichiers partent dès qu'ils sont choisis, en blocs de 1 Mo.
+// Page d'envoi : les fichiers partent dès qu'ils sont choisis (et le nom indiqué), en blocs de 1 Mo.
 // Aucune donnée saisie n'est insérée en HTML : tout passe par textContent.
 (() => {
   'use strict';
@@ -6,7 +6,7 @@
   const root = document.querySelector('[data-depot]');
   if (!root) return;
 
-  const api = `/api/d/${root.dataset.token}/uploads`;
+  const api = '/api/uploads';
   const maxBytes = Number(root.dataset.max);
   const allowed = new Set(root.dataset.ext.split(','));
 
@@ -16,6 +16,8 @@
   const queue = $('queue');
   const alertBox = $('alert');
   const done = $('done');
+  const uploader = $('uploader');
+  const trap = $('website');
 
   const items = [];
   let sending = false;
@@ -53,10 +55,19 @@
     return error;
   }
 
+  function uploaderName() {
+    const value = uploader.value.trim().replace(/\s+/g, ' ');
+    return value.length >= 3 && /\p{L}/u.test(value) ? value : '';
+  }
+
+  function showAlert(text) {
+    alertBox.textContent = text;
+    alertBox.hidden = !text;
+  }
+
   // ---- Liste des fichiers ----
 
   function addFiles(list) {
-    alertBox.hidden = true;
     done.hidden = true;
     for (const file of list) {
       const item = { file, state: 'ready', error: '', progress: 0, upload: null };
@@ -94,7 +105,7 @@
     }
     switch (item.state) {
       case 'ready':
-        item.line.textContent = 'En attente';
+        item.line.textContent = uploaderName() ? 'En attente' : 'En attente de votre nom';
         break;
       case 'sending': {
         if (!item.bar) {
@@ -210,7 +221,20 @@
     item.state = 'sending';
     render(item);
     if (!item.upload) {
-      const start = await request('POST', api, JSON.stringify({ name: item.file.name, size: item.file.size }));
+      const { challenge, bits } = await request('GET', '/api/challenge');
+      const nonce = await window.depotPow.solve(challenge, bits);
+      const start = await request(
+        'POST',
+        api,
+        JSON.stringify({
+          name: item.file.name,
+          size: item.file.size,
+          uploader: uploaderName(),
+          website: trap.value,
+          challenge,
+          nonce,
+        }),
+      );
       item.upload = { id: start.uploadId, chunkSize: start.chunkSize, chunks: start.chunks, next: 0 };
     }
     const upload = item.upload;
@@ -238,7 +262,14 @@
   }
 
   async function sendAll() {
-    if (sending) return;
+    if (sending || !items.some((candidate) => candidate.state === 'ready')) return;
+    if (!uploaderName()) {
+      showAlert('Indiquez votre prénom et votre nom : l\'envoi démarrera aussitôt.');
+      for (const candidate of items) if (candidate.state === 'ready') render(candidate);
+      uploader.focus();
+      return;
+    }
+    showAlert('');
     sending = true;
     let item;
     while ((item = items.find((candidate) => candidate.state === 'ready'))) {
@@ -252,8 +283,7 @@
     }
     sending = false;
     if (items.some((candidate) => candidate.state === 'failed')) {
-      alertBox.textContent = 'Un envoi n\'a pas abouti. Vérifiez votre connexion, puis cliquez sur Réessayer.';
-      alertBox.hidden = false;
+      showAlert('Un envoi n\'a pas abouti. Vérifiez votre connexion, puis cliquez sur Réessayer.');
     }
     done.hidden = !(items.some((candidate) => candidate.state === 'done') && items.every((candidate) => candidate.state === 'done'));
   }
@@ -287,6 +317,19 @@
     depth = 0;
     drop.classList.remove('over');
     if (event.dataTransfer && event.dataTransfer.files.length) addFiles(event.dataTransfer.files);
+  });
+
+  // Le nom arrive après les fichiers : l'envoi démarre quand la saisie s'arrête.
+  let typing;
+  uploader.addEventListener('input', () => {
+    clearTimeout(typing);
+    typing = setTimeout(() => {
+      if (uploaderName()) sendAll();
+    }, 1500);
+  });
+  uploader.addEventListener('change', () => {
+    clearTimeout(typing);
+    if (uploaderName()) sendAll();
   });
 
   window.addEventListener('beforeunload', (event) => {
